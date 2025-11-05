@@ -1,0 +1,12 @@
+-=-Reuniao 05-11-2025-=-
+-visualizamos o codigo
+-sincronizamos GIT
+-criamos projeto qgis com modelo de exeplo feito no model builder
+
+p/ proxima reunião:
+-criar uma janela funcional que carregue dois arquivos shp
+-calcular as colunas para coord X e Coord Y em cada arquivo de entrada
+-bonus: unir atributos do pontos teste mais proximo de cada ponto ref
+
+
+-=-
