@@ -1,3 +1,23 @@
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+Tabela:
+	Estatística descritiva p/ X, Y e Dist
+	(Verificar se describe tem % pos e % neg)
+	Verificação de Normalidade
+
+Gráficos:
+	-Dispersão de pontos (Com Círculo de valor personalizável)
+	-Distribuição de Frequência (x,y, Dist(Vetor de Erro))
+	-Distribuição de Frequência Acumulada (x,y, Dist(Vetor de Erro))
+	-BoxPlot + ViolinPlot
+	-Mapa de Vetor de erro (com seta, ajustar escala p/ ficar visível) (Carregar polígono de limite) =*
+	
+Semana 28/10 a 31/10:
+-Criar repositório no GitHub e fazer upload dos códigos e dados de exemplo. Convidar Max e Pedro como colaboradores.
+-Gerar Gráficos (50%)
+-Criar template básico de plugin (Cancelar, Ok, Importar camada vetorial de pontos)
+
+
 -=-Reuniao 05-11-2025-=-
 -visualizamos o codigo
 -sincronizamos GIT
