@@ -93,9 +93,19 @@ class ErroPlotDialog(QDialog):
         mean_erro_X = df_init['erro_X'].mean()
         mean_erro_Y = df_init['erro_Y'].mean()
 
-        ax.arrow(0, 0, mean_erro_X, 0, head_width=0.5, color='red')
-        ax.arrow(0, 0, 0, mean_erro_Y, head_width=0.5, color='blue')
-        ax.arrow(0, 0, mean_erro_X, mean_erro_Y, head_width=0.5, color='green')
+        escala = XY_max_error * 0.03  # 3% da escala total
+
+ax.arrow(0, 0, mean_erro_X, 0,
+         head_width=escala, head_length=escala,
+         fc='red', ec='red', length_includes_head=True)
+
+ax.arrow(0, 0, 0, mean_erro_Y,
+         head_width=escala, head_length=escala,
+         fc='blue', ec='blue', length_includes_head=True)
+
+ax.arrow(0, 0, mean_erro_X, mean_erro_Y,
+         head_width=escala, head_length=escala,
+         fc='green', ec='green', length_includes_head=True)
 
         # Definir limites
         XY_max_error = df_init[['erro_X', 'erro_Y']].abs().values.max()
