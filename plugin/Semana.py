@@ -1,11 +1,10 @@
-# ======== codigo 100% ===========
 # ================================
-# Código Ajustado para QGIS 3.40
-# Pronto para rodar no Console Python
+# Código FINAL - QGIS 3.40
+# Gera gráfico + tabela + salva em PNG e PDF
 # Digite: run()
 # ================================
 
-import sys
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 import geopandas as gpd
@@ -14,7 +13,6 @@ from qgis.PyQt.QtWidgets import (
     QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton,
     QFileDialog, QTabWidget, QWidget, QHBoxLayout
 )
-
 
 # ===================== JANELA PRINCIPAL =====================
 
@@ -69,54 +67,119 @@ class ErroPlotDialog(QDialog):
     def processar_dados(self):
         caminho = self.campo_shp.text()
 
+        if caminho == "":
+            print("Selecione um shapefile primeiro!")
+            return
+
+        # Pasta para salvar
+        pasta = os.path.dirname(caminho)
+        caminho_png = os.path.join(pasta, "grafico_erros.png")
+        caminho_pdf = os.path.join(pasta, "grafico_erros.pdf")
+
         df_init = gpd.read_file(caminho)
+
+        # Confere colunas
+        colunas = df_init.columns
+        if not all(col in colunas for col in ["IPHONE_X", "GEO_X", "IPHONE_Y", "GEO_Y"]):
+            print("ERRO: O shapefile precisa ter as colunas: IPHONE_X, GEO_X, IPHONE_Y, GEO_Y")
+            print("Colunas encontradas:", list(colunas))
+            return
 
         # Calcula os erros
         df_init['erro_X'] = df_init['IPHONE_X'] - df_init['GEO_X']
         df_init['erro_Y'] = df_init['IPHONE_Y'] - df_init['GEO_Y']
         df_init['erro_lin'] = np.sqrt(df_init['erro_X']**2 + df_init['erro_Y']**2)
 
-        # Inicia figura
-        fig, ax = plt.subplots(figsize=(6, 6))
-        ax.set_aspect('equal')
-
-        # Círculo = erro médio
-        mean_erro_lin = df_init['erro_lin'].mean()
-        circle = plt.Circle((0, 0), mean_erro_lin, fill=False, edgecolor='gray', linestyle='dashed')
-        ax.add_patch(circle)
-
-        # Plot dos pontos
-        plt.scatter(0, 0, s=500, color='black', marker='+')
-        plt.scatter(df_init['erro_X'], df_init['erro_Y'], s=10)
-
-        # Médias
+        # Valores médios
         mean_erro_X = df_init['erro_X'].mean()
         mean_erro_Y = df_init['erro_Y'].mean()
+        mean_erro_lin = df_init['erro_lin'].mean()
 
-        escala = XY_max_error * 0.03  # 3% da escala total
+        # Maior erro absoluto
+        XY_max_error = df_init[['erro_X', 'erro_Y']].abs().max().max()
+        lim = XY_max_error * 1.2
 
-ax.arrow(0, 0, mean_erro_X, 0,
-         head_width=escala, head_length=escala,
-         fc='red', ec='red', length_includes_head=True)
+        print("\n==== RESULTADOS ====")
+        print(f"Erro médio em X: {mean_erro_X:.3f} m")
+        print(f"Erro médio em Y: {mean_erro_Y:.3f} m")
+        print(f"Erro médio linear: {mean_erro_lin:.3f} m")
 
-ax.arrow(0, 0, 0, mean_erro_Y,
-         head_width=escala, head_length=escala,
-         fc='blue', ec='blue', length_includes_head=True)
+        # ======================= GRÁFICO =======================
 
-ax.arrow(0, 0, mean_erro_X, mean_erro_Y,
-         head_width=escala, head_length=escala,
-         fc='green', ec='green', length_includes_head=True)
+        fig, ax = plt.subplots(figsize=(8, 8))
+        ax.set_aspect('equal')
 
-        # Definir limites
-        XY_max_error = df_init[['erro_X', 'erro_Y']].abs().values.max()
-        lim = XY_max_error * 1.1
+        # Círculo do erro médio
+        circle = plt.Circle((0, 0), mean_erro_lin,
+                            fill=False,
+                            edgecolor='gray',
+                            linestyle='dashed',
+                            linewidth=2)
+        ax.add_patch(circle)
+
+        # Pontos
+        ax.scatter(0, 0, s=200, color='black', marker='+', label='Referência (0,0)')
+        ax.scatter(df_init['erro_X'], df_init['erro_Y'],
+                   s=15, alpha=0.6, label='Erros individuais')
+
+        # ================= SETAS (QUIVER) =================
+
+        ax.quiver(0, 0, mean_erro_X, 0,
+                  angles='xy', scale_units='xy', scale=1,
+                  color='red', width=0.005)
+
+        ax.quiver(0, 0, 0, mean_erro_Y,
+                  angles='xy', scale_units='xy', scale=1,
+                  color='blue', width=0.005)
+
+        ax.quiver(0, 0, mean_erro_X, mean_erro_Y,
+                  angles='xy', scale_units='xy', scale=1,
+                  color='green', width=0.005)
+
+        # ================== TABELA NO CANTO SUPERIOR ESQUERDO ==================
+
+        texto_tabela = (
+            f"LEGENDA / EXPLICAÇÃO\n\n"
+            f"+   = Referência (0,0)\n"
+            f"•   = Erros individuais\n"
+            f"→ Vermelho = Média em X\n"
+            f"↑ Azul = Média em Y\n"
+            f"↗ Verde = Média vetorial\n"
+            f"Círculo = Erro linear médio\n\n"
+            f"VALORES\n"
+            f"Média X = {mean_erro_X:.3f} m\n"
+            f"Média Y = {mean_erro_Y:.3f} m\n"
+            f"Erro médio = {mean_erro_lin:.3f} m"
+        )
+
+        ax.text(
+            0.02, 0.98,
+            texto_tabela,
+            transform=ax.transAxes,
+            fontsize=9,
+            verticalalignment='top',
+            horizontalalignment='left',
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.85)
+        )
+
+        # Limites e aparência
         ax.set_xlim(-lim, lim)
         ax.set_ylim(-lim, lim)
 
         ax.grid(True, linestyle='--', alpha=0.5)
         ax.set_xlabel("Erro em X (m)")
         ax.set_ylabel("Erro em Y (m)")
-        plt.title("Dispersão dos Erros")
+        ax.set_title("Dispersão dos Erros GNSS")
+        ax.legend()
+
+        # ================== SALVAR AUTOMÁTICO ==================
+
+        plt.savefig(caminho_png, dpi=300, bbox_inches='tight')
+        plt.savefig(caminho_pdf, bbox_inches='tight')
+
+        print("\n✅ Gráfico salvo com sucesso em:")
+        print(f"PNG: {caminho_png}")
+        print(f"PDF: {caminho_pdf}")
 
         plt.show()
 
