@@ -1,0 +1,12 @@
+name=Two Shapefiles Loader
+qgisMinimumVersion=3.16
+description=Carrega dois shapefiles a partir de layers do projeto ou do gerenciador de arquivos.
+version=0.1.0
+author=Seu Nome
+email=seu@email.com
+about=Plugin exemplo para selecionar/abrir dois shapefiles.
+category=Vector
+icon=resources/icon.png
+homepage=
+tracker=
+repository=
