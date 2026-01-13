@@ -1,3 +1,3 @@
 def classFactory(iface):
-    from .two_shapefiles_loader import TwoShapefilesLoaderPlugin
+    from .testeManual import TwoShapefilesLoaderPlugin
     return TwoShapefilesLoaderPlugin(iface)
