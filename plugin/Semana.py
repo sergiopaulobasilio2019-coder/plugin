@@ -1,176 +1,104 @@
-import numpy as np
-import geopandas as gpd
-import os
-from datetime import datetime
-
-from qgis.PyQt.QtWidgets import (
-    QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton,
-    QFileDialog, QTabWidget, QWidget, QHBoxLayout, QMessageBox
+from qgis.core import (
+    QgsProcessing,
+    QgsProcessingAlgorithm,
+    QgsProcessingParameterVectorLayer,
+    QgsProcessingException,
+    QgsSpatialIndex,
+    QgsFeatureRequest
 )
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
 
-class ErroPlotDialog(QDialog):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Análise de Distorção GNSS Pro (Corrigido)")
-        self.resize(1000, 700)
-        
-        self.dados_calculados = None 
-        self.current_fig = None
+import numpy as np
+import matplotlib.pyplot as plt
 
-        layout_principal = QVBoxLayout()
-        self.tabs = QTabWidget()
 
-        # --- ABA 1: ENTRADA ---
-        aba_dados = QWidget()
-        layout_dados = QVBoxLayout()
+class PECAlgorithm(QgsProcessingAlgorithm):
 
-        # Campos de arquivo
-        self.ref_edit = QLineEdit()
-        self.test_edit = QLineEdit()
-        
-        for label, edit, method in [
-            ("Referência (Base):", self.ref_edit, self.selecionar_ref),
-            ("Teste (GNSS):", self.test_edit, self.selecionar_test)
-        ]:
-            lay = QHBoxLayout()
-            edit.setReadOnly(True)
-            btn = QPushButton("...")
-            btn.setFixedWidth(40)
-            btn.clicked.connect(method)
-            lay.addWidget(QLabel(label))
-            lay.addWidget(edit)
-            lay.addWidget(btn)
-            layout_dados.addLayout(lay)
+    REF = 'REF'
+    TEST = 'TEST'
 
-        self.btn_calc = QPushButton("🚀 CALCULAR E GERAR RELATÓRIO")
-        self.btn_calc.setFixedHeight(45)
-        self.btn_calc.setStyleSheet("font-weight: bold; background-color: #27ae60; color: white;")
-        self.btn_calc.clicked.connect(self.processar_dados)
-        
-        layout_dados.addSpacing(10)
-        layout_dados.addWidget(self.btn_calc)
-        layout_dados.addStretch()
-        aba_dados.setLayout(layout_dados)
-        self.tabs.addTab(aba_dados, "1. Entrada")
+    def initAlgorithm(self, config=None):
 
-        # --- ABA 2: RESULTADOS ---
-        self.aba_resultados = QWidget()
-        self.layout_res = QVBoxLayout()
-        
-        self.btn_exportar = QPushButton("📄 Salvar Relatório em PDF")
-        self.btn_exportar.setFixedHeight(35)
-        self.btn_exportar.setStyleSheet("background-color: #2980b9; color: white;")
-        self.btn_exportar.clicked.connect(self.exportar_pdf)
-        self.btn_exportar.hide()
-        
-        self.aba_resultados.setLayout(self.layout_res)
-        self.tabs.addTab(self.aba_resultados, "2. Resultados")
+        self.addParameter(
+            QgsProcessingParameterVectorLayer(
+                self.REF,
+                'Camada de Referência',
+                [QgsProcessing.TypeVectorPoint]
+            )
+        )
 
-        layout_principal.addWidget(self.tabs)
-        self.setLayout(layout_principal)
+        self.addParameter(
+            QgsProcessingParameterVectorLayer(
+                self.TEST,
+                'Camada de Teste',
+                [QgsProcessing.TypeVectorPoint]
+            )
+        )
 
-    def selecionar_ref(self):
-        arq, _ = QFileDialog.getOpenFileName(self, "Referência", "", "Shapefile (*.shp)")
-        if arq: self.ref_edit.setText(arq)
+    def processAlgorithm(self, parameters, context, feedback):
 
-    def selecionar_test(self):
-        arq, _ = QFileDialog.getOpenFileName(self, "Teste", "", "Shapefile (*.shp)")
-        if arq: self.test_edit.setText(arq)
+        ref = self.parameterAsVectorLayer(parameters, self.REF, context)
+        test = self.parameterAsVectorLayer(parameters, self.TEST, context)
 
-    def limpar_layout(self, layout):
-        while layout.count():
-            item = layout.takeAt(0)
-            if item.widget(): item.widget().deleteLater()
+        if not ref or not test:
+            raise QgsProcessingException('Erro ao carregar camadas.')
 
-    def processar_dados(self):
-        if not self.ref_edit.text() or not self.test_edit.text():
-            QMessageBox.warning(self, "Aviso", "Selecione os arquivos.")
-            return
+        # 🔥 REMOVIDA QUALQUER EXIGÊNCIA DE MESMO NÚMERO DE PONTOS
 
-        try:
-            # 1. Carregar
-            ref = gpd.read_file(self.ref_edit.text())
-            test = gpd.read_file(self.test_edit.text())
-            
-            # 2. Harmonizar CRS
-            if ref.crs != test.crs: 
-                ref = ref.to_crs(test.crs)
+        # Criar índice espacial da camada de teste
+        index = QgsSpatialIndex(test.getFeatures())
 
-            # 3. EXTRAÇÃO MANUAL (Resolve o erro do geometry_right)
-            ref['ref_x'] = ref.geometry.x
-            ref['ref_y'] = ref.geometry.y
+        distancias = []
 
-            # 4. Join Proximidade
-            joined = gpd.sjoin_nearest(test, ref, how="left", distance_col="dist_oficial")
+        for feat_ref in ref.getFeatures():
 
-            # 5. Cálculos
-            joined["eX"] = joined.geometry.x - joined["ref_x"]
-            joined["eY"] = joined.geometry.y - joined["ref_y"]
-            joined["eLin"] = np.sqrt(joined["eX"]**2 + joined["eY"]**2)
+            geom_ref = feat_ref.geometry()
 
-            stats = {
-                'mx': joined["eX"].mean(), 
-                'my': joined["eY"].mean(),
-                'mlin': joined["eLin"].mean(), 
-                'rmse': np.sqrt((joined["eLin"]**2).mean()),
-                'total': len(joined), 
-                'data': datetime.now().strftime("%d/%m/%Y %H:%M")
-            }
-            self.dados_calculados = (joined, stats)
+            if geom_ref is None or geom_ref.isEmpty():
+                continue
 
-            # 6. Interface Gráfica
-            self.limpar_layout(self.layout_res)
-            
-            resumo_txt = f"Pontos: {stats['total']} | RMSE: {stats['rmse']:.3f}m | Erro Médio: {stats['mlin']:.3f}m"
-            self.layout_res.addWidget(QLabel(f"<b>{resumo_txt}</b>"))
+            # Busca vizinho mais próximo
+            nearest_ids = index.nearestNeighbor(geom_ref.asPoint(), 1)
 
-            fig = Figure(figsize=(10, 5), dpi=100)
-            canvas = FigureCanvas(fig)
-            
-            ax1 = fig.add_subplot(121)
-            ax1.scatter(joined["eX"], joined["eY"], alpha=0.6, color='#3498db', edgecolors='white')
-            ax1.axhline(0, color='black', lw=1); ax1.axvline(0, color='black', lw=1)
-            ax1.set_title("Dispersão dos Erros (m)")
-            ax1.set_xlabel("Erro X"); ax1.set_ylabel("Erro Y")
-            ax1.grid(True, linestyle='--', alpha=0.6)
-            
-            ax2 = fig.add_subplot(122)
-            ax2.hist(joined["eLin"], bins=10, color='#2ecc71', edgecolor='white')
-            ax2.set_title("Histograma de Erro Linear")
-            ax2.set_xlabel("Distância (m)"); ax2.set_ylabel("Frequência")
+            if not nearest_ids:
+                continue
 
-            fig.tight_layout()
-            self.layout_res.addWidget(canvas)
-            self.layout_res.addWidget(self.btn_exportar)
-            self.btn_exportar.show()
-            self.current_fig = fig
-            self.tabs.setCurrentIndex(1)
+            request = QgsFeatureRequest().setFilterFid(nearest_ids[0])
+            feat_test = next(test.getFeatures(request))
 
-        except Exception as e:
-            QMessageBox.critical(self, "Erro", f"Ocorreu um problema: {str(e)}")
+            dist = geom_ref.distance(feat_test.geometry())
+            distancias.append(dist)
 
-    def exportar_pdf(self):
-        if not self.current_fig: return
-        
-        caminho, _ = QFileDialog.getSaveFileName(self, "Salvar Relatório", "Analise_GNSS.pdf", "PDF (*.pdf)")
-        if caminho:
-            try:
-                # Adiciona cabeçalho no PDF
-                _, s = self.dados_calculados
-                info = f"Relatório GNSS - {s['data']}\nRMSE: {s['rmse']:.4f}m | Pontos: {s['total']}"
-                self.current_fig.text(0.5, 0.02, info, ha='center', fontsize=8, color='gray')
-                
-                self.current_fig.savefig(caminho, bbox_inches='tight')
-                QMessageBox.information(self, "Sucesso", "PDF salvo com sucesso!")
-            except Exception as e:
-                QMessageBox.critical(self, "Erro ao salvar", str(e))
+        if len(distancias) == 0:
+            raise QgsProcessingException("Nenhuma distância foi calculada.")
 
-def run():
-    global dlg_gnss
-    dlg_gnss = ErroPlotDialog()
-    dlg_gnss.show()
-    return dlg_gnss
+        dados = np.array(distancias)
 
-run()
+        # ==============================
+        # Cálculo PEC
+        # ==============================
+
+        erro_90 = np.percentile(dados, 90)
+
+        escala_calc = erro_90 / 0.17
+
+        escalas_padrao = [1000, 2000, 5000, 10000, 25000, 50000, 100000]
+
+        escala_ajustada = None
+        for e in escalas_padrao:
+            if e >= escala_calc:
+                escala_ajustada = e
+                break
+
+        if escala_ajustada is None:
+            escala_ajustada = escalas_padrao[-1]
+
+        if erro_90 <= 0.17 * escala_ajustada:
+            classe = "Classe A"
+        elif erro_90 <= 0.30 * escala_ajustada:
+            classe = "Classe B"
+        else:
+            classe = "Classe C ou inferior"
+
+        feedback.pushInfo(f"Erro 90%: {erro_90:.3f} m")
+        feedback.pushInfo(f"Escala Calculada: 1:{escala_calc:.0f}")
+        fee
