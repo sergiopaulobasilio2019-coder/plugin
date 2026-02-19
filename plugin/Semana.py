@@ -42,7 +42,7 @@ class PECAlgorithm(QgsProcessingAlgorithm):
         if not ref or not test:
             raise QgsProcessingException('Erro ao carregar camadas.')
 
-        # 🔥 REMOVIDA QUALQUER EXIGÊNCIA DE MESMO NÚMERO DE PONTOS
+        #  REMOVIDA QUALQUER EXIGÊNCIA DE MESMO NÚMERO DE PONTOS
 
         # Criar índice espacial da camada de teste
         index = QgsSpatialIndex(test.getFeatures())
